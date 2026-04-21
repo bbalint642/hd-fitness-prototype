@@ -3,6 +3,15 @@
 import { useState } from "react"
 import Link from "next/link"
 import { Menu, X, Dumbbell, LogIn } from "lucide-react"
+import { HugeiconsIcon } from "@hugeicons/react"
+import {
+  UserIcon,
+  SettingsIcon,
+  LogoutIcon,
+  Dumbbell01Icon,
+  UserMultipleIcon,
+  DashboardCircleIcon,
+} from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/auth/auth-provider"
 import { UserMenu } from "@/components/auth/user-menu"
@@ -100,13 +109,13 @@ export function Navbar() {
                 </Button>
               )}
               {!isLoading && user && (
-                <div className="flex flex-col gap-3 pt-2 border-t border-border">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
+                <div className="flex flex-col gap-1 pt-3 mt-1 border-t border-border">
+                  <div className="flex items-center gap-3 px-2 py-2">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold text-sm">
                       {user.displayName.charAt(0).toUpperCase()}
                     </span>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-foreground">
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-semibold text-foreground">
                         {user.displayName}
                       </span>
                       <span className="text-xs uppercase tracking-wider text-primary">
@@ -114,25 +123,85 @@ export function Navbar() {
                       </span>
                     </div>
                   </div>
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="w-fit justify-start"
+
+                  <Link
+                    href={dashboardHref}
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   >
-                    <Link href={dashboardHref} onClick={() => setIsOpen(false)}>
-                      Dashboard
+                    <HugeiconsIcon
+                      icon={DashboardCircleIcon}
+                      className="w-[18px] h-[18px]"
+                    />
+                    Dashboard
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-left"
+                  >
+                    <HugeiconsIcon
+                      icon={UserIcon}
+                      className="w-[18px] h-[18px]"
+                    />
+                    Profil
+                  </button>
+
+                  {user.role === "coach" ? (
+                    <Link
+                      href="/dashboard/coach/clients"
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <HugeiconsIcon
+                        icon={UserMultipleIcon}
+                        className="w-[18px] h-[18px]"
+                      />
+                      Ügyfelek
                     </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="w-fit justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                  ) : (
+                    <Link
+                      href="/dashboard/client/training"
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    >
+                      <HugeiconsIcon
+                        icon={Dumbbell01Icon}
+                        className="w-[18px] h-[18px]"
+                      />
+                      Edzés
+                    </Link>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-left"
+                  >
+                    <HugeiconsIcon
+                      icon={SettingsIcon}
+                      className="w-[18px] h-[18px]"
+                    />
+                    Beállítások
+                  </button>
+
+                  <hr className="border-border my-1.5" />
+
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors text-left"
                     onClick={async () => {
                       setIsOpen(false)
                       await logout()
                     }}
                   >
+                    <HugeiconsIcon
+                      icon={LogoutIcon}
+                      className="w-[18px] h-[18px]"
+                    />
                     Kilépés
-                  </Button>
+                  </button>
                 </div>
               )}
             </div>
