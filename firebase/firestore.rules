@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// Firestore security rules for the HD Fit training app.
+//
+// Collection layout:
+//   users/{uid}                        - user profile (displayName, role, ...)
+//   users/{uid}/workouts/{workoutId}   - one workout per training day
+//
+// Access model:
+//   - A signed-in user can read their own profile; coaches can read everyone.
+//   - Workouts are owned by the user at `users/{uid}`. The owner can
+//     read/write their own workouts. A user with `role == "coach"` can
+//     read/write any user's workouts.
+//
+// For v1 we intentionally do not restrict which exercise/set fields the
+// client may edit; that granularity can be added later if needed.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isCoach() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "coach";
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // User profile documents.
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isCoach();
+      // Profile writes are handled out-of-band (admin SDK / coach tooling).
+      // Clients may not modify their own profile from the app for now.
+      allow write: if isCoach();
+
+      // Per-user workout documents.
+      match /workouts/{workoutId} {
+        allow read, write: if isSelf(uid) || isCoach();
+      }
+    }
+  }
+}

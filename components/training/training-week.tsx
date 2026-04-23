@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useState } from "react"
 import {
   Check,
   ChevronDown,
@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -27,265 +28,239 @@ import {
 import { cn } from "@/lib/utils"
 import {
   updateExerciseName,
-  updateExerciseNote,
-  updateRowField,
-  updateSeriesField,
-} from "@/lib/training/training-store"
+  updateExercisePrescription,
+  updateSetPerformance,
+} from "@/lib/training/firebase-training"
 import type {
-  ExerciseRow,
-  SeriesEntry,
-  SeriesField,
-  SeriesSlot,
-  TrainingDay,
-  TrainingExercise,
-  TrainingWeek,
+  Workout,
+  WorkoutExercise,
+  WorkoutSet,
 } from "@/lib/training/types"
+import { formatDayLabelHu, parseYyyyMmDd } from "@/lib/training/date-utils"
 
 export type TrainingMode = "client" | "coach"
 
 /* --------------------------- Shared style tokens -------------------------- */
 
-/** Fő fejléc: teljes primary (var(--primary) / accent arany) */
 const headerMainClass =
   "bg-primary text-primary-foreground font-semibold border border-primary/80"
 
-/** Sorozat alfejléc (Ism. / Súly / RIR): primary 50% átlátszósággal */
 const headerSubClass =
   "bg-primary/90 text-primary-foreground border border-primary/40 font-medium"
 
-/** Csak olvasható cella – semleges, nem „mező” */
 const cellReadOnlySurface = "bg-card/60 text-foreground"
-
-/**
- * Szerkeszthető oszlopok – semleges sötétebb tónus, amely úgy néz ki mint
- * egy beágyazott input-mező (ugyanazt az `--input` CSS változót használjuk,
- * amit a shadcn `Input` is). Letisztult, professzionális megjelenés.
- */
 const cellEditableSurface = "bg-input/35 text-foreground"
 
 /* ------------------------------- Public API ------------------------------- */
 
-interface TrainingWeekTableProps {
-  userId: string
-  week: TrainingWeek
-  /** `client` (alap): csak a kliens által szerkeszthető mezők írhatók.
-   *  `coach`: minden mező szerkeszthető. */
+interface WorkoutDayViewProps {
+  workout: Workout
+  /** `client` (default): only per-set performance + client note + hasVideo
+   *  are editable. `coach`: every field is editable. */
   mode?: TrainingMode
 }
 
 /**
- * Reszponzív entrypoint: `md` töréspont alatt egy workout-logger stílusú
- * kártyás mobilnézetet, felette pedig a meglévő sűrű asztali táblázatot
- * rendereli. Mindkét nézet ugyanazon a store-on osztozik, ezért egy
- * szerkesztés azonnal tükröződik a másikon is.
+ * Renders a single workout day. Responsive: desktop keeps the dense
+ * spreadsheet-style table, mobile collapses to a stacked card view.
+ * Both share the same Firestore mutators, so edits sync in realtime via
+ * the page-level subscription.
  */
-export function TrainingWeekTable(props: TrainingWeekTableProps) {
+export function WorkoutDayView(props: WorkoutDayViewProps) {
   return (
     <>
       <div className="hidden md:block">
-        <TrainingWeekDesktop {...props} />
+        <WorkoutDayDesktop {...props} />
       </div>
       <div className="md:hidden">
-        <TrainingWeekMobile {...props} />
+        <WorkoutDayMobile {...props} />
       </div>
     </>
   )
 }
 
 /* ============================================================================
- * Desktop / asztali nézet (a régi, sűrű táblázat)
+ * Desktop table view
  * ========================================================================= */
 
-function TrainingWeekDesktop({
-  userId,
-  week,
-  mode = "client",
-}: TrainingWeekTableProps) {
+function WorkoutDayDesktop({ workout, mode = "client" }: WorkoutDayViewProps) {
+  const dayDate = workout.date ? parseYyyyMmDd(workout.date) : null
+  const dayTitle = workout.dayTitle || (dayDate ? formatDayLabelHu(dayDate) : "Edzés")
+
   return (
     <Card className="border-border bg-card/80 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="font-serif text-xl uppercase tracking-wide">
-          {week.title}
+          {dayTitle}
         </CardTitle>
-        <CardDescription>{week.dateRange}</CardDescription>
+        <CardDescription>
+          {workout.date}
+          {workout.exercises.length > 0
+            ? ` · ${workout.exercises.length} gyakorlat`
+            : ""}
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-10">
-        {week.days.map((day) => (
-          <TrainingDayBlock
-            key={day.id}
-            userId={userId}
-            day={day}
-            mode={mode}
-          />
-        ))}
+      <CardContent>
+        {workout.exercises.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Ehhez a naphoz nincs rögzített gyakorlat.
+          </p>
+        ) : (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <Table className="text-sm">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent border-b border-primary/40">
+                  <TableHead
+                    rowSpan={2}
+                    className={cn("min-w-[220px] align-middle", headerMainClass)}
+                  >
+                    Gyakorlat
+                  </TableHead>
+                  <TableHead
+                    colSpan={4}
+                    className={cn(
+                      "text-center uppercase tracking-wider text-[11px] border-l border-primary/60",
+                      headerMainClass,
+                    )}
+                  >
+                    Előírás
+                  </TableHead>
+                  <TableHead
+                    rowSpan={2}
+                    className={cn(
+                      "w-14 text-center align-middle border-l border-primary/60",
+                      headerMainClass,
+                    )}
+                  >
+                    Szett
+                  </TableHead>
+                  <TableHead
+                    colSpan={3}
+                    className={cn(
+                      "text-center uppercase tracking-wider text-[11px] border-l border-primary/60",
+                      headerMainClass,
+                    )}
+                  >
+                    Teljesítés
+                  </TableHead>
+                  <TableHead
+                    rowSpan={2}
+                    className={cn(
+                      "min-w-[160px] align-middle border-l border-primary/60",
+                      headerMainClass,
+                    )}
+                  >
+                    Coach jegyzet
+                  </TableHead>
+                  <TableHead
+                    rowSpan={2}
+                    className={cn(
+                      "min-w-[180px] align-middle border-l border-primary/60",
+                      headerMainClass,
+                    )}
+                  >
+                    Saját jegyzet
+                  </TableHead>
+                  <TableHead
+                    rowSpan={2}
+                    className={cn(
+                      "w-16 text-center align-middle border-l border-primary/60",
+                      headerMainClass,
+                    )}
+                  >
+                    Videó
+                  </TableHead>
+                </TableRow>
+                <TableRow className="hover:bg-transparent border-b border-primary/40">
+                  <TableHead
+                    className={cn(
+                      "w-14 border-l border-primary/60 text-center text-[11px]",
+                      headerSubClass,
+                    )}
+                  >
+                    Sor.
+                  </TableHead>
+                  <TableHead
+                    className={cn("w-20 text-center text-[11px]", headerSubClass)}
+                  >
+                    Ism.
+                  </TableHead>
+                  <TableHead
+                    className={cn("w-20 text-center text-[11px]", headerSubClass)}
+                  >
+                    Súly
+                  </TableHead>
+                  <TableHead
+                    className={cn("w-14 text-center text-[11px]", headerSubClass)}
+                  >
+                    RIR
+                  </TableHead>
+                  <TableHead
+                    className={cn(
+                      "w-16 border-l border-primary/60 text-center text-[11px]",
+                      headerSubClass,
+                    )}
+                  >
+                    Ism.
+                  </TableHead>
+                  <TableHead
+                    className={cn("w-20 text-center text-[11px]", headerSubClass)}
+                  >
+                    Súly
+                  </TableHead>
+                  <TableHead
+                    className={cn("w-14 text-center text-[11px]", headerSubClass)}
+                  >
+                    RIR
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {workout.exercises.map((exercise) => (
+                  <ExerciseSetRows
+                    key={exercise.id}
+                    userId={workout.userId}
+                    workoutId={workout.id}
+                    exercise={exercise}
+                    weightUnit={workout.weightUnit}
+                    mode={mode}
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-function TrainingDayBlock({
+function ExerciseSetRows({
   userId,
-  day,
-  mode,
-}: {
-  userId: string
-  day: TrainingDay
-  mode: TrainingMode
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-baseline gap-3">
-        <h3 className="font-serif text-lg font-semibold uppercase tracking-wide text-foreground">
-          {day.title}
-        </h3>
-        <span className="text-xs uppercase tracking-wider text-muted-foreground">
-          {day.exercises.length} gyakorlat
-        </span>
-      </div>
-
-      <div className="rounded-lg border border-border overflow-hidden">
-        <Table className="text-sm">
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b border-primary/40">
-              <TableHead
-                rowSpan={2}
-                className={cn("min-w-[220px] align-middle", headerMainClass)}
-              >
-                Gyakorlat
-              </TableHead>
-              <TableHead
-                rowSpan={2}
-                className={cn("w-14 text-center align-middle", headerMainClass)}
-              >
-                Sor
-              </TableHead>
-              <TableHead
-                rowSpan={2}
-                className={cn("w-24 text-center align-middle", headerMainClass)}
-              >
-                Ism. tart.
-              </TableHead>
-              <TableHead
-                colSpan={3}
-                className={cn(
-                  "border-l border-primary/60 text-center uppercase tracking-wider text-[11px]",
-                  headerMainClass,
-                )}
-              >
-                1. sorozat
-              </TableHead>
-              <TableHead
-                colSpan={3}
-                className={cn(
-                  "border-l border-primary/60 text-center uppercase tracking-wider text-[11px]",
-                  headerMainClass,
-                )}
-              >
-                2. sorozat
-              </TableHead>
-              <TableHead
-                rowSpan={2}
-                className={cn(
-                  "min-w-[160px] border-l border-primary/60 align-middle",
-                  headerMainClass,
-                )}
-              >
-                Coach jegyzet
-              </TableHead>
-              <TableHead
-                rowSpan={2}
-                className={cn("min-w-[160px] align-middle", headerMainClass)}
-              >
-                Saját jegyzet
-              </TableHead>
-              <TableHead
-                rowSpan={2}
-                className={cn("w-20 text-center align-middle", headerMainClass)}
-              >
-                Videó
-              </TableHead>
-            </TableRow>
-            <TableRow className="hover:bg-transparent border-b border-primary/40">
-              <TableHead
-                className={cn(
-                  "w-16 border-l border-primary/60 text-center text-[11px]",
-                  headerSubClass,
-                )}
-              >
-                Ism.
-              </TableHead>
-              <TableHead
-                className={cn("w-20 text-center text-[11px]", headerSubClass)}
-              >
-                Súly
-              </TableHead>
-              <TableHead
-                className={cn("w-14 text-center text-[11px]", headerSubClass)}
-              >
-                RIR
-              </TableHead>
-              <TableHead
-                className={cn(
-                  "w-16 border-l border-primary/60 text-center text-[11px]",
-                  headerSubClass,
-                )}
-              >
-                Ism.
-              </TableHead>
-              <TableHead
-                className={cn("w-20 text-center text-[11px]", headerSubClass)}
-              >
-                Súly
-              </TableHead>
-              <TableHead
-                className={cn("w-14 text-center text-[11px]", headerSubClass)}
-              >
-                RIR
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {day.exercises.map((exercise) => (
-              <ExerciseRows
-                key={exercise.id}
-                userId={userId}
-                dayId={day.id}
-                exercise={exercise}
-                mode={mode}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  )
-}
-
-function ExerciseRows({
-  userId,
-  dayId,
+  workoutId,
   exercise,
+  weightUnit,
   mode,
 }: {
   userId: string
-  dayId: string
-  exercise: TrainingExercise
+  workoutId: string
+  exercise: WorkoutExercise
+  weightUnit: string
   mode: TrainingMode
 }) {
-  const rowCount = exercise.rows.length
   const isCoach = mode === "coach"
-
   const coachEditableSurface = isCoach ? cellEditableSurface : cellReadOnlySurface
+  const rowCount = Math.max(1, exercise.sets.length)
 
   return (
     <Fragment>
-      {exercise.rows.map((row, rowIdx) => {
-        const isFirst = rowIdx === 0
-        const isLast = rowIdx === rowCount - 1
+      {exercise.sets.map((set, idx) => {
+        const isFirst = idx === 0
+        const isLast = idx === exercise.sets.length - 1
 
         return (
           <TableRow
-            key={row.id}
+            key={`${exercise.id}-${set.index}`}
             className={cn(
               "border-b border-border/60 transition-colors",
               "hover:bg-primary/[0.03]",
@@ -294,104 +269,140 @@ function ExerciseRows({
             )}
           >
             {isFirst && (
-              <TableCell
-                rowSpan={rowCount}
-                className={cn(
-                  "align-top whitespace-normal font-medium",
-                  isCoach ? "p-1" : "",
-                  coachEditableSurface,
-                )}
-              >
-                {isCoach ? (
-                  <EditableText
-                    value={exercise.name}
-                    onChange={(v) =>
-                      updateExerciseName(userId, dayId, exercise.id, v)
-                    }
-                    placeholder="Gyakorlat neve…"
-                  />
-                ) : (
-                  exercise.name
-                )}
-              </TableCell>
+              <>
+                <TableCell
+                  rowSpan={rowCount}
+                  className={cn(
+                    "align-top whitespace-normal font-medium",
+                    isCoach ? "p-1" : "",
+                    coachEditableSurface,
+                  )}
+                >
+                  {isCoach ? (
+                    <EditableText
+                      value={exercise.name}
+                      onChange={(v) =>
+                        updateExerciseName(userId, workoutId, exercise.id, v)
+                      }
+                      placeholder="Gyakorlat neve…"
+                    />
+                  ) : (
+                    exercise.name || "–"
+                  )}
+                </TableCell>
+
+                <TableCell
+                  rowSpan={rowCount}
+                  className={cn(
+                    "text-center tabular-nums border-l border-border/40",
+                    isCoach ? "p-1" : "px-2 py-2",
+                    coachEditableSurface,
+                  )}
+                >
+                  {isCoach ? (
+                    <EditableNumber
+                      value={exercise.targetSets}
+                      onChange={(v) =>
+                        updateExercisePrescription(userId, workoutId, exercise.id, {
+                          targetSets: Math.max(0, Math.floor(v ?? 0)),
+                        })
+                      }
+                      className="text-center"
+                    />
+                  ) : (
+                    exercise.targetSets
+                  )}
+                </TableCell>
+
+                <TableCell
+                  rowSpan={rowCount}
+                  className={cn(
+                    "text-center border-l border-border/40",
+                    isCoach ? "p-1" : "px-2 py-2",
+                    coachEditableSurface,
+                  )}
+                >
+                  {isCoach ? (
+                    <EditableText
+                      value={exercise.targetRepRange}
+                      onChange={(v) =>
+                        updateExercisePrescription(userId, workoutId, exercise.id, {
+                          targetRepRange: v,
+                        })
+                      }
+                      placeholder="–"
+                      className="text-center"
+                    />
+                  ) : (
+                    exercise.targetRepRange || "–"
+                  )}
+                </TableCell>
+
+                <TableCell
+                  rowSpan={rowCount}
+                  className={cn(
+                    "text-center tabular-nums border-l border-border/40",
+                    isCoach ? "p-1" : "px-2 py-2",
+                    coachEditableSurface,
+                  )}
+                >
+                  {isCoach ? (
+                    <EditableNumber
+                      value={exercise.targetWeight}
+                      step={0.5}
+                      onChange={(v) =>
+                        updateExercisePrescription(userId, workoutId, exercise.id, {
+                          targetWeight: v,
+                        })
+                      }
+                      className="text-center"
+                    />
+                  ) : exercise.targetWeight === null ? (
+                    "–"
+                  ) : (
+                    `${exercise.targetWeight} ${weightUnit}`
+                  )}
+                </TableCell>
+
+                <TableCell
+                  rowSpan={rowCount}
+                  className={cn(
+                    "text-center tabular-nums border-l border-border/40",
+                    isCoach ? "p-1" : "px-2 py-2",
+                    coachEditableSurface,
+                  )}
+                >
+                  {isCoach ? (
+                    <EditableNumber
+                      value={exercise.targetRir}
+                      onChange={(v) =>
+                        updateExercisePrescription(userId, workoutId, exercise.id, {
+                          targetRir: v,
+                        })
+                      }
+                      className="text-center"
+                    />
+                  ) : (
+                    (exercise.targetRir ?? "–")
+                  )}
+                </TableCell>
+              </>
             )}
 
             <TableCell
               className={cn(
-                "text-center tabular-nums border-l border-border/40",
-                isCoach ? "p-1" : "px-2 py-2",
-                coachEditableSurface,
+                "text-center tabular-nums font-medium text-muted-foreground border-l border-border/40",
+                "px-2 py-2",
               )}
             >
-              {isCoach ? (
-                <EditableNumber
-                  value={row.setsCount}
-                  onChange={(v) =>
-                    updateRowField(
-                      userId,
-                      dayId,
-                      exercise.id,
-                      row.id,
-                      "setsCount",
-                      v,
-                    )
-                  }
-                  className="text-center"
-                />
-              ) : (
-                (row.setsCount ?? "–")
-              )}
+              {set.index}.
             </TableCell>
 
-            <TableCell
-              className={cn(
-                "text-center border-l border-border/40",
-                isCoach ? "p-1" : "px-2 py-2",
-                coachEditableSurface,
-              )}
-            >
-              {isCoach ? (
-                <EditableText
-                  value={row.repRange}
-                  onChange={(v) =>
-                    updateRowField(
-                      userId,
-                      dayId,
-                      exercise.id,
-                      row.id,
-                      "repRange",
-                      v,
-                    )
-                  }
-                  className="text-center"
-                  placeholder="–"
-                />
-              ) : (
-                row.repRange || "–"
-              )}
-            </TableCell>
-
-            <SeriesCells
+            <PerformanceCells
               userId={userId}
-              dayId={dayId}
+              workoutId={workoutId}
               exerciseId={exercise.id}
-              rowId={row.id}
-              slot="series1"
-              reps={row.series1.reps}
-              weight={row.series1.weight}
-              rir={row.series1.rir}
-              withBorderLeft
-            />
-            <SeriesCells
-              userId={userId}
-              dayId={dayId}
-              exerciseId={exercise.id}
-              rowId={row.id}
-              slot="series2"
-              reps={row.series2.reps}
-              weight={row.series2.weight}
-              rir={row.series2.rir}
-              withBorderLeft
+              set={set}
             />
 
             {isFirst && (
@@ -408,74 +419,57 @@ function ExerciseRows({
                     <EditableTextarea
                       value={exercise.coachNote}
                       onChange={(v) =>
-                        updateExerciseNote(
-                          userId,
-                          dayId,
-                          exercise.id,
-                          "coachNote",
-                          v,
-                        )
+                        updateExercisePrescription(userId, workoutId, exercise.id, {
+                          coachNote: v,
+                        })
                       }
                       placeholder="Coach megjegyzés…"
                     />
                   ) : exercise.coachNote.trim() ? (
-                    exercise.coachNote
-                  ) : (
-                    "–"
-                  )}
-                </TableCell>
-                <TableCell
-                  rowSpan={rowCount}
-                  className={cn(
-                    "align-top p-1 border-l border-border/40",
-                    cellEditableSurface,
-                  )}
-                >
-                  <EditableTextarea
-                    value={exercise.clientNote}
-                    onChange={(v) =>
-                      updateExerciseNote(
-                        userId,
-                        dayId,
-                        exercise.id,
-                        "clientNote",
-                        v,
-                      )
-                    }
-                    placeholder="Saját megjegyzés…"
-                  />
-                </TableCell>
-                <TableCell
-                  rowSpan={rowCount}
-                  className={cn(
-                    "align-top text-center border-l border-border/40",
-                    isCoach ? "p-1" : "px-2 py-2",
-                    coachEditableSurface,
-                  )}
-                >
-                  {isCoach ? (
-                    <EditableText
-                      value={exercise.videoNote}
-                      onChange={(v) =>
-                        updateExerciseNote(
-                          userId,
-                          dayId,
-                          exercise.id,
-                          "videoNote",
-                          v,
-                        )
-                      }
-                      placeholder="–"
-                      className="text-center"
-                    />
-                  ) : exercise.videoNote.trim() ? (
-                    exercise.videoNote
+                    <span className="whitespace-pre-wrap">{exercise.coachNote}</span>
                   ) : (
                     "–"
                   )}
                 </TableCell>
               </>
             )}
+
+            <TableCell
+              className={cn(
+                "align-top p-1 border-l border-border/40",
+                cellEditableSurface,
+              )}
+            >
+              <EditableTextarea
+                value={set.clientNote}
+                onChange={(v) =>
+                  updateSetPerformance(userId, workoutId, exercise.id, set.index, {
+                    clientNote: v,
+                  })
+                }
+                placeholder="Saját megjegyzés…"
+              />
+            </TableCell>
+
+            <TableCell
+              className={cn(
+                "text-center border-l border-border/40",
+                cellEditableSurface,
+                "px-2 py-2",
+              )}
+            >
+              <div className="flex items-center justify-center">
+                <Checkbox
+                  checked={set.hasVideo}
+                  onCheckedChange={(checked) =>
+                    updateSetPerformance(userId, workoutId, exercise.id, set.index, {
+                      hasVideo: checked === true,
+                    })
+                  }
+                  aria-label={`Videó a ${set.index}. szettről`}
+                />
+              </div>
+            </TableCell>
           </TableRow>
         )
       })}
@@ -483,57 +477,46 @@ function ExerciseRows({
   )
 }
 
-function SeriesCells({
+function PerformanceCells({
   userId,
-  dayId,
+  workoutId,
   exerciseId,
-  rowId,
-  slot,
-  reps,
-  weight,
-  rir,
-  withBorderLeft,
+  set,
 }: {
   userId: string
-  dayId: string
+  workoutId: string
   exerciseId: string
-  rowId: string
-  slot: SeriesSlot
-  reps: number | null
-  weight: number | null
-  rir: number | null
-  withBorderLeft?: boolean
+  set: WorkoutSet
 }) {
-  const setSeries = (field: SeriesField, value: number | null) =>
-    updateSeriesField(userId, dayId, exerciseId, rowId, slot, field, value)
+  const setField = (patch: Partial<WorkoutSet>) =>
+    updateSetPerformance(userId, workoutId, exerciseId, set.index, patch)
 
   return (
     <>
       <TableCell
         className={cn(
-          "p-1 text-center",
+          "p-1 text-center border-l border-border/60",
           cellEditableSurface,
-          withBorderLeft && "border-l border-border/60",
         )}
       >
         <EditableNumber
-          value={reps}
-          onChange={(v) => setSeries("reps", v)}
+          value={set.performedReps}
+          onChange={(v) => setField({ performedReps: v })}
           className="text-center"
         />
       </TableCell>
       <TableCell className={cn("p-1 text-center", cellEditableSurface)}>
         <EditableNumber
-          value={weight}
-          onChange={(v) => setSeries("weight", v)}
+          value={set.performedWeight}
+          onChange={(v) => setField({ performedWeight: v })}
           step={0.5}
           className="text-center"
         />
       </TableCell>
       <TableCell className={cn("p-1 text-center", cellEditableSurface)}>
         <EditableNumber
-          value={rir}
-          onChange={(v) => setSeries("rir", v)}
+          value={set.performedRir}
+          onChange={(v) => setField({ performedRir: v })}
           className="text-center"
         />
       </TableCell>
@@ -542,133 +525,72 @@ function SeriesCells({
 }
 
 /* ============================================================================
- * Mobilnézet – workout logger stílus
- *
- * Tervezési szempontok:
- *   • Minimális vízszintes scroll: egyetlen függőleges stream.
- *   • A sorozat-adatok egy 2 oszlopos rácsban (1. szett / 2. szett) jelennek
- *     meg, mindegyik szett három mezővel (Ism. / Súly / RIR) egymás alatt.
- *   • „Befejezett” szett vizuálisan kiemelt (primary szegély + pipa), hogy
- *     az edzés közbeni feedback azonnali legyen.
- *   • Jegyzetek egy összecsukható sávba kerülnek, így nem tolják szét a
- *     gyakorlat-kártyát, de bármikor elérhetők.
- *   • A nap-választó vízszintes pill-sáv (sticky a szekció tetején), így
- *     hosszú gyakorlat-listánál is egy mozdulattal váltható a nap.
+ * Mobile stacked view
  * ========================================================================= */
 
-function TrainingWeekMobile({
-  userId,
-  week,
-  mode = "client",
-}: TrainingWeekTableProps) {
-  const [activeDayId, setActiveDayId] = useState<string>(
-    week.days[0]?.id ?? "",
-  )
-
-  const activeDay = useMemo(
-    () => week.days.find((d) => d.id === activeDayId) ?? week.days[0],
-    [week.days, activeDayId],
-  )
-
-  if (!activeDay) return null
-
-  const hasMultipleDays = week.days.length > 1
+function WorkoutDayMobile({ workout, mode = "client" }: WorkoutDayViewProps) {
+  const dayDate = workout.date ? parseYyyyMmDd(workout.date) : null
+  const dayTitle = workout.dayTitle || (dayDate ? formatDayLabelHu(dayDate) : "Edzés")
 
   return (
     <section className="space-y-4">
       <header className="space-y-1 px-1">
-        <h2 className="font-serif text-2xl font-bold uppercase tracking-wide text-foreground">
-          {week.title}
+        <h2 className="font-serif text-xl font-bold uppercase tracking-wide text-foreground">
+          {dayTitle}
         </h2>
-        <p className="text-sm text-muted-foreground">{week.dateRange}</p>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">
+          {workout.date}
+          {workout.exercises.length > 0
+            ? ` · ${workout.exercises.length} gyakorlat`
+            : ""}
+        </p>
       </header>
 
-      {hasMultipleDays && (
-        <div
-          role="tablist"
-          aria-label="Edzésnapok"
-          className={cn(
-            "sticky top-16 z-20 -mx-4 px-4 py-2 flex gap-2 overflow-x-auto",
-            "bg-background/80 backdrop-blur-md border-b border-border",
-            "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          )}
-        >
-          {week.days.map((d) => {
-            const active = d.id === activeDay.id
-            return (
-              <button
-                key={d.id}
-                role="tab"
-                aria-selected={active}
-                onClick={() => setActiveDayId(d.id)}
-                className={cn(
-                  "shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors",
-                  "border",
-                  active
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "bg-card/60 text-foreground border-border hover:border-primary/50",
-                )}
-              >
-                {d.title}
-              </button>
-            )
-          })}
-        </div>
+      {workout.exercises.length === 0 ? (
+        <p className="px-1 text-sm text-muted-foreground">
+          Ehhez a naphoz nincs rögzített gyakorlat.
+        </p>
+      ) : (
+        <ul className="space-y-4">
+          {workout.exercises.map((exercise, idx) => (
+            <li key={exercise.id}>
+              <MobileExerciseCard
+                userId={workout.userId}
+                workoutId={workout.id}
+                exercise={exercise}
+                weightUnit={workout.weightUnit}
+                index={idx + 1}
+                mode={mode}
+              />
+            </li>
+          ))}
+        </ul>
       )}
-
-      <div className="flex items-center justify-between px-1">
-        <h3 className="font-serif text-base font-semibold uppercase tracking-wider text-foreground">
-          {activeDay.title}
-        </h3>
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {activeDay.exercises.length} gyakorlat
-        </span>
-      </div>
-
-      <ul className="space-y-4">
-        {activeDay.exercises.map((exercise, idx) => (
-          <li key={exercise.id}>
-            <MobileExerciseCard
-              userId={userId}
-              dayId={activeDay.id}
-              exercise={exercise}
-              index={idx + 1}
-              mode={mode}
-            />
-          </li>
-        ))}
-      </ul>
     </section>
   )
 }
 
 function MobileExerciseCard({
   userId,
-  dayId,
+  workoutId,
   exercise,
+  weightUnit,
   index,
   mode,
 }: {
   userId: string
-  dayId: string
-  exercise: TrainingExercise
+  workoutId: string
+  exercise: WorkoutExercise
+  weightUnit: string
   index: number
   mode: TrainingMode
 }) {
   const isCoach = mode === "coach"
-
-  const totalSetsPlanned = exercise.rows.reduce(
-    (acc, row) => acc + (row.setsCount ?? 0),
+  const completedSets = exercise.sets.reduce(
+    (acc, set) => acc + (isSetComplete(set) ? 1 : 0),
     0,
   )
-  const completedSets = exercise.rows.reduce(
-    (acc, row) => acc + isSeriesComplete(row.series1) + isSeriesComplete(row.series2),
-    0,
-  )
-
   const hasCoachNote = exercise.coachNote.trim().length > 0
-  const hasClientNote = exercise.clientNote.trim().length > 0
-  const hasVideo = exercise.videoNote.trim().length > 0
 
   return (
     <article
@@ -697,213 +619,200 @@ function MobileExerciseCard({
           {isCoach ? (
             <EditableText
               value={exercise.name}
-              onChange={(v) => updateExerciseName(userId, dayId, exercise.id, v)}
+              onChange={(v) => updateExerciseName(userId, workoutId, exercise.id, v)}
               placeholder="Gyakorlat neve…"
               className="!px-2 !py-1 text-base font-semibold leading-tight"
             />
           ) : (
             <h4 className="text-base font-semibold leading-tight text-foreground">
-              {exercise.name}
+              {exercise.name || "–"}
             </h4>
           )}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] uppercase tracking-wider text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <Dumbbell className="h-3 w-3" aria-hidden />
-              {completedSets}/{totalSetsPlanned || "–"} szett
+              {completedSets}/{exercise.targetSets || "–"} szett
             </span>
-            {hasVideo && !isCoach && (
-              <span className="inline-flex items-center gap-1 text-primary">
-                <Clapperboard className="h-3 w-3" aria-hidden />
-                Videó
-              </span>
-            )}
+            <span>Cél zóna: {exercise.targetRepRange || "–"} ism.</span>
+            <span>
+              {exercise.targetWeight === null
+                ? "–"
+                : `${exercise.targetWeight} ${weightUnit}`}
+            </span>
+            <span>RIR {exercise.targetRir ?? "–"}</span>
           </div>
         </div>
       </header>
 
+      {isCoach && (
+        <div className="grid grid-cols-2 gap-2 border-b border-border/80 px-4 py-3 md:grid-cols-4">
+          <LabeledField label="Szettek">
+            <EditableNumber
+              value={exercise.targetSets}
+              onChange={(v) =>
+                updateExercisePrescription(userId, workoutId, exercise.id, {
+                  targetSets: Math.max(0, Math.floor(v ?? 0)),
+                })
+              }
+              className="text-center"
+            />
+          </LabeledField>
+          <LabeledField label="Ism. tart.">
+            <EditableText
+              value={exercise.targetRepRange}
+              onChange={(v) =>
+                updateExercisePrescription(userId, workoutId, exercise.id, {
+                  targetRepRange: v,
+                })
+              }
+              placeholder="6-9"
+              className="text-center"
+            />
+          </LabeledField>
+          <LabeledField label={`Súly (${weightUnit})`}>
+            <EditableNumber
+              value={exercise.targetWeight}
+              step={0.5}
+              onChange={(v) =>
+                updateExercisePrescription(userId, workoutId, exercise.id, {
+                  targetWeight: v,
+                })
+              }
+              className="text-center"
+            />
+          </LabeledField>
+          <LabeledField label="Cél RIR">
+            <EditableNumber
+              value={exercise.targetRir}
+              onChange={(v) =>
+                updateExercisePrescription(userId, workoutId, exercise.id, {
+                  targetRir: v,
+                })
+              }
+              className="text-center"
+            />
+          </LabeledField>
+        </div>
+      )}
+
       <div className="divide-y divide-border/60">
-        {exercise.rows.map((row, rowIdx) => (
-          <MobileRowBlock
-            key={row.id}
+        {exercise.sets.map((set) => (
+          <MobileSetBlock
+            key={set.index}
             userId={userId}
-            dayId={dayId}
+            workoutId={workoutId}
             exerciseId={exercise.id}
-            row={row}
-            rowIndex={rowIdx + 1}
-            isCoach={isCoach}
+            set={set}
+            weightUnit={weightUnit}
           />
         ))}
       </div>
 
       <MobileNotesSection
         userId={userId}
-        dayId={dayId}
+        workoutId={workoutId}
         exercise={exercise}
         isCoach={isCoach}
-        defaultOpen={hasCoachNote || hasClientNote || hasVideo || isCoach}
+        defaultOpen={hasCoachNote || isCoach}
       />
     </article>
   )
 }
 
-function MobileRowBlock({
+function MobileSetBlock({
   userId,
-  dayId,
+  workoutId,
   exerciseId,
-  row,
-  rowIndex,
-  isCoach,
+  set,
+  weightUnit,
 }: {
   userId: string
-  dayId: string
+  workoutId: string
   exerciseId: string
-  row: ExerciseRow
-  rowIndex: number
-  isCoach: boolean
+  set: WorkoutSet
+  weightUnit: string
 }) {
-  return (
-    <div className="space-y-3 px-4 py-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-          <span className="font-semibold text-foreground">Sor {rowIndex}</span>
-          <span aria-hidden className="text-border">
-            •
-          </span>
-          <span className="inline-flex items-center gap-1">
-            Célzóna:
-            {isCoach ? (
-              <EditableText
-                value={row.repRange}
-                onChange={(v) =>
-                  updateRowField(userId, dayId, exerciseId, row.id, "repRange", v)
-                }
-                className="!w-16 !px-1.5 !py-0.5 text-center text-xs"
-                placeholder="–"
-              />
-            ) : (
-              <span className="font-mono text-foreground">
-                {row.repRange || "–"}
-              </span>
-            )}
-            <span>ism.</span>
-          </span>
-        </div>
-
-        {isCoach && (
-          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span>Előírt:</span>
-            <EditableNumber
-              value={row.setsCount}
-              onChange={(v) =>
-                updateRowField(userId, dayId, exerciseId, row.id, "setsCount", v)
-              }
-              className="!w-12 !px-1.5 !py-0.5 text-center text-xs"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <MobileSetTile
-          label="1. szett"
-          series={row.series1}
-          onChange={(field, value) =>
-            updateSeriesField(
-              userId,
-              dayId,
-              exerciseId,
-              row.id,
-              "series1",
-              field,
-              value,
-            )
-          }
-        />
-        <MobileSetTile
-          label="2. szett"
-          series={row.series2}
-          onChange={(field, value) =>
-            updateSeriesField(
-              userId,
-              dayId,
-              exerciseId,
-              row.id,
-              "series2",
-              field,
-              value,
-            )
-          }
-        />
-      </div>
-    </div>
-  )
-}
-
-function MobileSetTile({
-  label,
-  series,
-  onChange,
-}: {
-  label: string
-  series: SeriesEntry
-  onChange: (field: SeriesField, value: number | null) => void
-}) {
-  const completed = isSeriesComplete(series) === 1
+  const complete = isSetComplete(set)
   const empty =
-    series.reps === null && series.weight === null && series.rir === null
+    set.performedReps === null &&
+    set.performedWeight === null &&
+    set.performedRir === null
+
+  const setField = (patch: Partial<WorkoutSet>) =>
+    updateSetPerformance(userId, workoutId, exerciseId, set.index, patch)
 
   return (
     <div
       className={cn(
-        "relative rounded-lg border p-2.5 transition-colors",
-        completed
-          ? "border-primary/60 bg-primary/[0.06]"
-          : empty
-          ? "border-dashed border-border bg-card/40"
-          : "border-border bg-card/70",
+        "space-y-3 px-4 py-4 transition-colors",
+        complete && "bg-primary/[0.04]",
       )}
     >
-      <div className="mb-2 flex items-center justify-between">
-        <span
-          className={cn(
-            "text-[10px] font-semibold uppercase tracking-wider",
-            completed ? "text-primary" : "text-muted-foreground",
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs uppercase tracking-wider">
+          <span
+            className={cn(
+              "font-semibold",
+              complete ? "text-primary" : "text-foreground",
+            )}
+          >
+            {set.index}. szett
+          </span>
+          {complete && (
+            <Check className="h-3.5 w-3.5 text-primary" aria-label="Kész" />
           )}
-        >
-          {label}
-        </span>
-        {completed && (
-          <Check
-            className="h-3.5 w-3.5 text-primary"
-            aria-label="Kész szett"
+          {empty && (
+            <span className="text-muted-foreground">még nincs rögzítve</span>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <Clapperboard className="h-3.5 w-3.5" aria-hidden />
+          Videó
+          <Checkbox
+            checked={set.hasVideo}
+            onCheckedChange={(checked) =>
+              setField({ hasVideo: checked === true })
+            }
+            aria-label={`Videó a ${set.index}. szettről`}
           />
-        )}
+        </label>
       </div>
 
-      <div className="space-y-1.5">
-        <MobileSetField
+      <div className="grid grid-cols-3 gap-2">
+        <MobilePerfField
           label="Ism."
-          value={series.reps}
-          onChange={(v) => onChange("reps", v)}
+          value={set.performedReps}
+          onChange={(v) => setField({ performedReps: v })}
         />
-        <MobileSetField
+        <MobilePerfField
           label="Súly"
-          unit="kg"
+          unit={weightUnit}
           step={0.5}
-          value={series.weight}
-          onChange={(v) => onChange("weight", v)}
+          value={set.performedWeight}
+          onChange={(v) => setField({ performedWeight: v })}
         />
-        <MobileSetField
+        <MobilePerfField
           label="RIR"
-          value={series.rir}
-          onChange={(v) => onChange("rir", v)}
+          value={set.performedRir}
+          onChange={(v) => setField({ performedRir: v })}
         />
       </div>
+
+      <label className="block">
+        <span className="mb-1 block text-[11px] uppercase tracking-wider text-muted-foreground">
+          Szett jegyzet
+        </span>
+        <EditableTextarea
+          value={set.clientNote}
+          onChange={(v) => setField({ clientNote: v })}
+          placeholder="Mit tapasztaltál ezen a szetten?"
+        />
+      </label>
     </div>
   )
 }
 
-function MobileSetField({
+function MobilePerfField({
   label,
   unit,
   value,
@@ -917,9 +826,10 @@ function MobileSetField({
   step?: number
 }) {
   return (
-    <label className="flex items-center gap-2 rounded-md bg-input/35 px-2 py-1.5">
-      <span className="w-10 shrink-0 text-[11px] uppercase tracking-wider text-muted-foreground">
+    <label className="flex flex-col gap-1 rounded-md bg-input/35 px-2 py-1.5">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
+        {unit ? ` (${unit})` : ""}
       </span>
       <EditableNumber
         value={value}
@@ -930,32 +840,25 @@ function MobileSetField({
           "!px-1 !py-0 h-7 hover:!bg-transparent",
         )}
       />
-      {unit && (
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-          {unit}
-        </span>
-      )}
     </label>
   )
 }
 
 function MobileNotesSection({
   userId,
-  dayId,
+  workoutId,
   exercise,
   isCoach,
   defaultOpen,
 }: {
   userId: string
-  dayId: string
-  exercise: TrainingExercise
+  workoutId: string
+  exercise: WorkoutExercise
   isCoach: boolean
   defaultOpen: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
-
   const hasCoachNote = exercise.coachNote.trim().length > 0
-  const hasVideo = exercise.videoNote.trim().length > 0
 
   return (
     <details
@@ -973,7 +876,7 @@ function MobileNotesSection({
       >
         <span className="inline-flex items-center gap-2">
           <NotebookPen className="h-3.5 w-3.5" aria-hidden />
-          Jegyzetek & videó
+          Coach jegyzet
         </span>
         <ChevronDown
           className={cn(
@@ -984,16 +887,19 @@ function MobileNotesSection({
         />
       </summary>
 
-      <div className="space-y-3 px-4 pb-4">
-        <MobileNoteBlock
-          icon={<MessageSquareText className="h-3.5 w-3.5" />}
-          label="Coach jegyzet"
-        >
+      <div className="px-4 pb-4">
+        <div className="rounded-lg border border-border/80 bg-card/40 p-3">
+          <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
+            <MessageSquareText className="h-3.5 w-3.5" />
+            Coach jegyzet
+          </div>
           {isCoach ? (
             <EditableTextarea
               value={exercise.coachNote}
               onChange={(v) =>
-                updateExerciseNote(userId, dayId, exercise.id, "coachNote", v)
+                updateExercisePrescription(userId, workoutId, exercise.id, {
+                  coachNote: v,
+                })
               }
               placeholder="Coach megjegyzés…"
             />
@@ -1007,73 +913,35 @@ function MobileNotesSection({
               {hasCoachNote ? exercise.coachNote : "Nincs coach megjegyzés."}
             </p>
           )}
-        </MobileNoteBlock>
-
-        <MobileNoteBlock
-          icon={<NotebookPen className="h-3.5 w-3.5" />}
-          label="Saját jegyzet"
-        >
-          <EditableTextarea
-            value={exercise.clientNote}
-            onChange={(v) =>
-              updateExerciseNote(userId, dayId, exercise.id, "clientNote", v)
-            }
-            placeholder="Mit tapasztaltál? Hogy ment?"
-          />
-        </MobileNoteBlock>
-
-        <MobileNoteBlock
-          icon={<Clapperboard className="h-3.5 w-3.5" />}
-          label="Videó"
-        >
-          {isCoach ? (
-            <EditableText
-              value={exercise.videoNote}
-              onChange={(v) =>
-                updateExerciseNote(userId, dayId, exercise.id, "videoNote", v)
-              }
-              placeholder="Videó link vagy referencia…"
-            />
-          ) : (
-            <p
-              className={cn(
-                "text-sm leading-snug",
-                hasVideo ? "text-foreground" : "text-muted-foreground/70",
-              )}
-            >
-              {hasVideo ? exercise.videoNote : "Nincs hozzárendelt videó."}
-            </p>
-          )}
-        </MobileNoteBlock>
+        </div>
       </div>
     </details>
   )
 }
 
-function MobileNoteBlock({
-  icon,
+function LabeledField({
   label,
   children,
 }: {
-  icon: React.ReactNode
   label: string
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border border-border/80 bg-card/40 p-3">
-      <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
-        {icon}
+    <label className="flex flex-col gap-1 rounded-md bg-input/35 px-2 py-1.5">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
-      </div>
+      </span>
       {children}
-    </div>
+    </label>
   )
 }
 
-function isSeriesComplete(series: SeriesEntry): 0 | 1 {
-  return series.reps !== null && series.weight !== null && series.rir !== null
-    ? 1
-    : 0
+function isSetComplete(set: WorkoutSet): boolean {
+  return (
+    set.performedReps !== null &&
+    set.performedWeight !== null &&
+    set.performedRir !== null
+  )
 }
 
 /* -------------------------- Editable cell inputs -------------------------- */
@@ -1099,21 +967,31 @@ function EditableNumber({
   className?: string
   placeholder?: string
 }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const displayed = draft ?? (value === null ? "" : String(value))
+
   return (
     <input
       type="number"
       inputMode="decimal"
       step={step}
-      value={value ?? ""}
+      value={displayed}
       placeholder={placeholder}
-      onChange={(event) => {
-        const raw = event.target.value
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft === null) return
+        const raw = draft.trim()
+        setDraft(null)
         if (raw === "") {
-          onChange(null)
+          if (value !== null) onChange(null)
           return
         }
         const parsed = Number(raw)
-        onChange(Number.isNaN(parsed) ? null : parsed)
+        if (Number.isNaN(parsed)) {
+          if (value !== null) onChange(null)
+          return
+        }
+        if (parsed !== value) onChange(parsed)
       }}
       className={cn(
         cellInputBase,
@@ -1135,12 +1013,21 @@ function EditableText({
   placeholder?: string
   className?: string
 }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const displayed = draft ?? value
+
   return (
     <input
       type="text"
-      value={value}
+      value={displayed}
       placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft === null) return
+        const next = draft
+        setDraft(null)
+        if (next !== value) onChange(next)
+      }}
       className={cn(cellInputBase, "text-foreground", className)}
     />
   )
@@ -1155,11 +1042,20 @@ function EditableTextarea({
   onChange: (value: string) => void
   placeholder?: string
 }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const displayed = draft ?? value
+
   return (
     <textarea
-      value={value}
+      value={displayed}
       placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft === null) return
+        const next = draft
+        setDraft(null)
+        if (next !== value) onChange(next)
+      }}
       rows={2}
       className={cn(cellInputBase, "resize-y min-h-[36px] leading-snug")}
     />

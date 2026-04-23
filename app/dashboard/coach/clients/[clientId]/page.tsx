@@ -4,11 +4,10 @@ import { use, useEffect, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
-import { TrainingWeekTable } from "@/components/training/training-week"
+import { TrainingWeekView } from "@/components/training/training-week-view"
 import { Button } from "@/components/ui/button"
 import { getClientById } from "@/lib/auth/firebase-users"
 import type { AuthUser } from "@/lib/auth/types"
-import { useTrainingPlan } from "@/lib/training/training-store"
 
 type LoadState =
   | { status: "loading" }
@@ -113,8 +112,6 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 }
 
 function ClientTrainingView({ client }: { client: AuthUser }) {
-  const plan = useTrainingPlan(client.id)
-
   return (
     <section className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6 md:py-16 space-y-6 md:space-y-8">
       <div className="space-y-3 md:space-y-4">
@@ -142,16 +139,7 @@ function ClientTrainingView({ client }: { client: AuthUser }) {
         </div>
       </div>
 
-      <div className="space-y-6 md:space-y-8">
-        {plan.weeks.map((week) => (
-          <TrainingWeekTable
-            key={week.id}
-            userId={client.id}
-            week={week}
-            mode="coach"
-          />
-        ))}
-      </div>
+      <TrainingWeekView userId={client.id} mode="coach" />
     </section>
   )
 }

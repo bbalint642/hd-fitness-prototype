@@ -1,0 +1,56 @@
+{
+  "dayTitle": "1. nap",
+  "weightUnit": "kg",
+  "exercises": [
+    {
+      "id": "ex-1",
+      "order": 0,
+      "name": "Fekvenyomás egykezesekkel egyenes padon",
+      "targetSets": 3,
+      "targetRepRange": "5-8",
+      "targetWeight": 32.5,
+      "targetRir": 2,
+      "coachNote": ""
+    },
+    {
+      "id": "ex-2",
+      "order": 1,
+      "name": "Egyenes gépen nyomás",
+      "targetSets": 2,
+      "targetRepRange": "7-10",
+      "targetWeight": 60,
+      "targetRir": 2,
+      "coachNote": ""
+    },
+    {
+      "id": "ex-3",
+      "order": 2,
+      "name": "Tárogatás gépen",
+      "targetSets": 2,
+      "targetRepRange": "8-12",
+      "targetWeight": 65,
+      "targetRir": 2,
+      "coachNote": ""
+    },
+    {
+      "id": "ex-4",
+      "order": 3,
+      "name": "Tricepsz letolás hosszú kötéllel",
+      "targetSets": 3,
+      "targetRepRange": "10-13",
+      "targetWeight": 25,
+      "targetRir": 2,
+      "coachNote": ""
+    },
+    {
+      "id": "ex-5",
+      "order": 4,
+      "name": "Oldalemelés egykezesekkel",
+      "targetSets": 2,
+      "targetRepRange": "10-14",
+      "targetWeight": 10,
+      "targetRir": 2,
+      "coachNote": ""
+    }
+  ]
+}

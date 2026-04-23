@@ -1,48 +1,62 @@
-export interface SeriesEntry {
-  reps: number | null
-  weight: number | null
-  rir: number | null
-}
+/**
+ * Firestore-backed training model.
+ *
+ * Shape:
+ *   users/{uid}/workouts/{workoutId}
+ *     date: "YYYY-MM-DD"
+ *     exercises: WorkoutExercise[]
+ *       sets: WorkoutSet[]   (length == targetSets)
+ */
 
-export interface ExerciseRow {
-  id: string
-  /** "Sor" column – number of prescribed sets for this configuration. */
-  setsCount: number | null
-  /** "Ism. tart." column – target rep range as free text ("5-8", "10-13"). */
-  repRange: string
-  series1: SeriesEntry
-  series2: SeriesEntry
-}
+export type WeightUnit = "kg" | "lbs"
 
-export interface TrainingExercise {
-  id: string
-  name: string
-  rows: ExerciseRow[]
-  coachNote: string
+export interface WorkoutSet {
+  /** 1-based position within the exercise's sets array. */
+  index: number
+  performedReps: number | null
+  performedWeight: number | null
+  performedRir: number | null
   clientNote: string
-  videoNote: string
+  hasVideo: boolean
 }
 
-export interface TrainingDay {
+export interface WorkoutExercise {
   id: string
-  title: string
-  exercises: TrainingExercise[]
+  order: number
+  name: string
+  targetSets: number
+  /** Free-text rep range ("6-9", "10-13"). */
+  targetRepRange: string
+  targetWeight: number | null
+  targetRir: number | null
+  coachNote: string
+  sets: WorkoutSet[]
 }
 
-export interface TrainingWeek {
+export interface Workout {
   id: string
-  title: string
-  dateRange: string
-  days: TrainingDay[]
-}
-
-export interface TrainingPlan {
+  /** Owning user's Firebase Auth UID. Not stored on the doc (implied by path). */
   userId: string
-  weeks: TrainingWeek[]
+  /** "YYYY-MM-DD" — sortable lexicographically. */
+  date: string
+  dayTitle: string
+  weightUnit: WeightUnit
+  exercises: WorkoutExercise[]
+  /** ISO-formatted timestamps, populated from Firestore server timestamps. */
+  createdAt: string | null
+  updatedAt: string | null
 }
 
-/** Fields on a single series cell (reps, weight or RIR). */
-export type SeriesField = keyof SeriesEntry
+export type ExercisePrescriptionPatch = Partial<
+  Pick<
+    WorkoutExercise,
+    "targetSets" | "targetRepRange" | "targetWeight" | "targetRir" | "coachNote"
+  >
+>
 
-/** Which of the two series (1. or 2.) on a row is being edited. */
-export type SeriesSlot = "series1" | "series2"
+export type SetPerformancePatch = Partial<
+  Pick<
+    WorkoutSet,
+    "performedReps" | "performedWeight" | "performedRir" | "clientNote" | "hasVideo"
+  >
+>
